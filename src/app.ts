@@ -53,8 +53,9 @@ bot.on("text", async (ctx) => {
             );
         }
 
-        const regex = /musescore.com\/user\/[0-9]+\/scores\/[0-9]+/gm;
-        if (!regex.test(link)) {
+        const regex = /musescore\.com\/user\/[0-9]+\/scores\/[0-9]+/gm;
+        const regex2 = /musescore\.com\/\w+\/scores\/[0-9]+/gm
+        if (!regex.test(link) && !regex2.test(link)) {
             return ctx.reply(
                 "Invalid link. Please send a valid MuseScore link."
             );
