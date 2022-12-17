@@ -37,10 +37,10 @@ bot.start((ctx) => {
     );
 });
 
-bot.command('reset', (ctx) => {
+bot.command("reset", (ctx) => {
     tracker[ctx.from.id] = 0;
-    ctx.reply('Reset triggered. Try doing what you were doing again.');
-})
+    ctx.reply("Reset triggered. Try doing what you were doing again.");
+});
 
 bot.on("text", async (ctx) => {
     try {
@@ -48,12 +48,16 @@ bot.on("text", async (ctx) => {
 
         // Validate the URL
         if (link.includes("official_scores")) {
-            return ctx.reply("Sorry, official scores cannot be downloaded at this time.")
+            return ctx.reply(
+                "Sorry, official scores cannot be downloaded at this time."
+            );
         }
 
         const regex = /musescore.com\/user\/[0-9]+\/scores\/[0-9]+/gm;
         if (!regex.test(link)) {
-            return ctx.reply("Invalid link. Please send a valid MuseScore link.");
+            return ctx.reply(
+                "Invalid link. Please send a valid MuseScore link."
+            );
         }
 
         // Check if the user has exceeded the limit
@@ -93,28 +97,36 @@ bot.on("text", async (ctx) => {
         // Placeholder variable for the score title
         let scoreTitle = "";
 
-        shell.stdout.on("data", function (data) {
-            console.log({data: data.toString()});
-            console.log("-------------------------------");
-            if (data.toString() === "\x1B[2D\x1B[2C" && status === 0) {
-                // 'Please input a valid musescore URL'
-                console.log(`Please input a valid musescore URL\n${link}`);
-                status = 1;
+        // every 2 seconds, check to see if the current number of entries in [final] is equal to the number of entries in [final] 2 seconds ago
+        // if it is, then progress to the next step
+
+        let final: string = "";
+        let step = 0;
+        let prevLength = 0;
+        let prevStepLength = -1;
+        const interval = setInterval(() => {
+            const curLength = final.length;
+            if (curLength === prevLength && curLength !== prevStepLength) {
+                
+                prevStepLength = curLength;
+                
+                // advance to next step
+                runStep();
+            }
+            prevLength = curLength;
+        }, 1000);
+
+        const runStep = () => {
+            if (step === 4) {
+                return;
+            }
+           
+            console.log(`advancing to step ${step+1}`);
+            if (step === 0) {
                 shell.stdin.write(link + "\n");
             }
-
-            if (
-                (data.toString().endsWith("(Y/n) \x1B[18D\x1B[18C") ||
-                    data.toString() === "\x1B[18C") &&
-                status === 1
-            ) {
-                // Continue?
-
-                status = 2;
-
-                const matchedTitle = data
-                    .toString()
-                    .match(/(?<=Title:)(.*)(?=)/gm);
+            if (step === 1) {
+                const matchedTitle = final.match(/(?<=Title:)(.*)(?=)/gm);
                 if (matchedTitle) {
                     scoreTitle = matchedTitle[0].trim();
                     ctx.telegram.editMessageText(
@@ -123,43 +135,36 @@ bot.on("text", async (ctx) => {
                         undefined,
                         `Your link has been received. Please wait...\n\n✅ Found score: ${scoreTitle}\n⏳ Downloading files...`
                     );
-                }
-                console.log(`Continue (y/n)`);
+                }                
                 shell.stdin.write("\n");
             }
-
-            if (
-                (data.toString().endsWith("pdf\x1B[8D\x1B[8C") ||
-                    data.toString() === "\x1B[8C" ||
-                    data.toString() === "\x1B[8D\x1B[8C") &&
-                status === 2
-            ) {
+            if (step === 2) {
                 // there's no way to write arrow keys, so for now, we will just download all
-                shell.stdin.write(" ");
-                status = 3;
+                shell.stdin.write(" ");                
                 shell.stdin.write("i" + "\n");
-                console.log(`Selecting all files to download`);
-                // shell.stdin.write("\n")
+                // console.log(`Selecting all files to download`);
             }
-
-            if (
-                (data.toString().endsWith("\x1B[58D\x1B[58C") ||
-                    data.toString() === "\x1B[8C" ||
-                    data.toString() === "\x1B[58C") &&
-                status === 3
-            ) {
-                status = 4;
+            if (step === 3) {
                 shell.stdin.write(dir);
                 shell.stdin.write("\n");
 
-                // files downloaded
+                // shell auto-closes once the files have finished downloading. 
+                // This will be listened for below              
                 
-                shell.stdin.end();
             }
+          
+            step += 1;
+        };
+
+        shell.stdout.on("data", function (data) {
+            final += data.toString();
+
+           
         });
 
         shell.on("close", () => {
             console.log("shell closed");
+            clearInterval(interval);
             if (!scoreTitle) {
                 return ctx.telegram.editMessageText(
                     ctx.chat.id,
@@ -181,10 +186,15 @@ bot.on("text", async (ctx) => {
 
                 console.log(files);
                 if (!files || !files.length) {
-                    ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, "Sorry, there was an unexpected error. Please send me the link again.\n\nIf this error persists, please try again later.")
-                    return
+                    ctx.telegram.editMessageText(
+                        ctx.chat.id,
+                        msg.message_id,
+                        undefined,
+                        "Sorry, there was an unexpected error. Please send me the link again.\n\nIf this error persists, please try again later."
+                    );
+                    return;
                 }
-                ctx.sendChatAction("upload_document")
+                ctx.sendChatAction("upload_document");
                 const promises = files.map((file) => {
                     return ctx.telegram.sendDocument(
                         ctx.from.id,
@@ -225,15 +235,12 @@ bot.on("text", async (ctx) => {
     }
 });
 
-
-
 bot.launch().then(() => {
     console.log("Bot is running!");
 });
 
 // custom function to catch message errors
 const messageErrorHandler = (e: any) => console.log(e);
-
 
 // Enable graceful stop
 const shutDown = () => {
